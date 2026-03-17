@@ -1,7 +1,7 @@
 import cv2
 from hand_tracker import HandTracker, draw_hand_skeleton
 from song_selector import SongSelector
-from ui import PlayButton, StemButton, StartButton, MemoryCueButton, Deck, Waveform, BPMSlider, VolumeSlider
+from ui import PlayButton, StemButton, StartButton, MemoryCueButton, ResetCueButton, TempoResetButton, Deck, Waveform, BPMSlider, VolumeSlider
 
 # Fixed display size: UI and hit-testing are always in this resolution,
 # so layout looks the same on every device regardless of camera or window size.
@@ -24,8 +24,8 @@ def main():
     frame = cv2.resize(frame, (DISPLAY_W, DISPLAY_H))
     width, height = DISPLAY_W, DISPLAY_H
 
-    def_left = "die_young"
-    def_right = "drip"
+    def_left = "jane"
+    def_right = "dougie"
 
     song_selector = SongSelector()
     song_selector.select("left", def_left)
@@ -74,16 +74,23 @@ def main():
     cue_y = py + 100 + 80
     cue_spacing = 2 * cue_radius + 12  # center-to-center so circles don't overlap (radius 44 → need 88+ gap)
     slider_cue_gap = 50  # gap between slider edge and circles
-    # Position circles just past slider (toward center) so gap is kept, sliders stay at lx/rx
+    # Position circles: both sides symmetric — START (outer), CUE, RST (inner toward center)
     left_start_cx = lx + slider_w + slider_cue_gap + cue_radius
     left_cue_cx = left_start_cx + cue_spacing
-    right_cue_cx = rx - slider_cue_gap - cue_radius
-    right_start_cx = right_cue_cx - cue_spacing
+    left_reset_cx = left_cue_cx + cue_spacing
+    right_start_cx = rx - slider_cue_gap - cue_radius
+    right_cue_cx = right_start_cx - cue_spacing
+    right_reset_cx = right_cue_cx - cue_spacing
     left_start = StartButton(left_start_cx, cue_y, cue_radius, song_selector, "left")
     left_cue = MemoryCueButton(left_cue_cx, cue_y, cue_radius, song_selector, "left")
     right_start = StartButton(right_start_cx, cue_y, cue_radius, song_selector, "right")
     right_cue = MemoryCueButton(right_cue_cx, cue_y, cue_radius, song_selector, "right")
-    buttons = [left_button, right_button, left_start, left_cue, right_start, right_cue]
+    left_reset = ResetCueButton(left_reset_cx, cue_y, cue_radius, song_selector, "left")
+    right_reset = ResetCueButton(right_reset_cx, cue_y, cue_radius, song_selector, "right")
+    tempo_btn_w, tempo_btn_h = 48, 36
+    tempo_btn_gap = 8
+    tempo_btn_y = slider_y + (slider_h - tempo_btn_h) // 2
+    buttons = [left_button, right_button, left_start, left_cue, left_reset, right_start, right_cue, right_reset]
 
     for i, label in enumerate(stem_labels):
         row, col = divmod(i, 2)
@@ -105,13 +112,16 @@ def main():
     vol_slider_w, vol_slider_h = slider_h, slider_w
     vol_gap = 10
     vol_x_inset = 35
-    vol_y_inset = 110  # well above circles so dragging to bottom of slider doesn’t hit CUE/START
+    vol_y_inset = 160  # well above circles so dragging to bottom of slider doesn’t hit CUE/START
     left_vol_x = width // 4 - 30 + 100 + vol_gap + vol_x_inset
     right_vol_x = 3 * width // 4 - 70 - vol_slider_w - vol_gap - vol_x_inset
     vol_y = py - vol_y_inset
     left_vol = VolumeSlider(left_vol_x, vol_y, vol_slider_w, vol_slider_h, song_selector, "left")
     right_vol = VolumeSlider(right_vol_x, vol_y, vol_slider_w, vol_slider_h, song_selector, "right")
     sliders = [left_slider, right_slider, left_vol, right_vol]
+    left_tempo = TempoResetButton(lx - tempo_btn_w - tempo_btn_gap, tempo_btn_y, tempo_btn_w, tempo_btn_h, song_selector, "left", sliders=sliders)
+    right_tempo = TempoResetButton(rx + slider_w + tempo_btn_gap, tempo_btn_y, tempo_btn_w, tempo_btn_h, song_selector, "right", sliders=sliders)
+    buttons.extend([left_tempo, right_tempo])
 
     cv2.namedWindow("CV DJ Set", cv2.WINDOW_NORMAL)
     cv2.resizeWindow("CV DJ Set", DISPLAY_W, DISPLAY_H)

@@ -143,6 +143,50 @@ class MemoryCueButton(_CircleButton):
         self.selector.trigger_memory_cue(self.side)
 
 
+class TempoResetButton(Button):
+    """Toggle button: press to reset deck tempo to 1x. Green when at 1x. Ignores updates when pos is in a slider (no slide-into activation)."""
+    def __init__(self, x, y, width, height, selector, side, sliders=None, **kwargs):
+        super().__init__(x, y, width, height, **kwargs)
+        self.selector = selector
+        self.side = side
+        self.sliders = sliders or []
+
+    def update(self, hand, pos):
+        if any(s.contains(pos) for s in self.sliders):
+            return False
+        self.on = abs(self.selector.rate[self.side] - 1.0) < 0.01
+        return super().update(hand, pos)
+
+    def activate(self):
+        self.selector.reset_tempo(self.side)
+
+    def deactivate(self):
+        pass
+
+    def draw_label(self, frame):
+        cv2.putText(frame, "1x", (self.x + 6, self.y + self.height // 2 + 5),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1)
+        return frame
+
+
+class ResetCueButton(_CircleButton):
+    """Clears the stored cue breakpoint. Every press triggers (no toggle)."""
+    def __init__(self, cx, cy, radius, selector, side, **kwargs):
+        super().__init__(cx, cy, radius, selector, side, label="RST", **kwargs)
+
+    def update(self, hand, pos):
+        if self.contains(pos) and not self.pinched[hand]:
+            self.pinched[hand] = True
+            self.selector.reset_cue_point(self.side)
+            return True
+        if not self.contains(pos):
+            self.pinched[hand] = False
+        return False
+
+    def activate(self):
+        self.selector.reset_cue_point(self.side)
+
+
 class StemButton(Button):
     def __init__(self, x, y, width, height, selector, side, stem_index, label="", **kwargs):
         super().__init__(x, y, width, height, **kwargs)
@@ -284,6 +328,10 @@ class BPMSlider(HorizontalSlider):
         self.selector = selector
         self.side = side
         self.selector.set_rate(side, self.value * 2.0)
+
+    def draw(self, frame):
+        self.value = self.selector.rate[self.side] / 2.0
+        return super().draw(frame)
 
     def on_value(self, value):
         self.selector.set_rate(self.side, value * 2.0)

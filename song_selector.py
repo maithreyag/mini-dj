@@ -86,6 +86,10 @@ class SongSelector:
     def set_rate(self, side, rate):
         self.rate[side] = max(0.0, float(rate))
 
+    def reset_tempo(self, side):
+        """Reset deck to 1x (average BPM)."""
+        self.set_rate(side, 1.0)
+
     def set_deck_volume(self, side, vol):
         self.deck_volume[side] = max(0.0, min(1.0, float(vol)))
 
@@ -101,6 +105,10 @@ class SongSelector:
         else:
             self.position[side] = self.cue_point[side]
             self.playing[side] = True
+
+    def reset_cue_point(self, side):
+        """Clear the stored breakpoint for this deck."""
+        self.cue_point[side] = None
 
     def mute(self, side, stem_index):
         self.volumes[side][stem_index] = 0.0
