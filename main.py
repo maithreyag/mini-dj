@@ -1,7 +1,12 @@
 import cv2
 from hand_tracker import HandTracker, draw_hand_skeleton
 from song_selector import SongSelector
-from ui import PlayButton, StemButton, CueButton, Deck, Waveform, BPMSlider
+from ui import PlayButton, StemButton, StartButton, MemoryCueButton, Deck, Waveform, BPMSlider, VolumeSlider
+
+# Fixed display size: UI and hit-testing are always in this resolution,
+# so layout looks the same on every device regardless of camera or window size.
+DISPLAY_W = 1280
+DISPLAY_H = 720
 
 def main():
     tracker = HandTracker()
@@ -16,34 +21,70 @@ def main():
         print("Error: Could not read from camera.")
         return
 
-    height, width, _ = frame.shape
+    frame = cv2.resize(frame, (DISPLAY_W, DISPLAY_H))
+    width, height = DISPLAY_W, DISPLAY_H
 
-    def_left = "starboy"
-    def_right = "oouuh"
+    def_left = "die_young"
+    def_right = "drip"
 
     song_selector = SongSelector()
     song_selector.select("left", def_left)
     song_selector.select("right", def_right)
     song_selector.apply_bpm_sync()
 
-    # Play buttons (display coords: left on left, right on right)
-    py = 2 * height // 3
+    stem_labels = ["bass", "drm", "oth", "vox"]
+    stem_size = 70
+    gap = 40
+    section_gap = 20  # vertical gap between sections so nothing overlaps
+    slider_h = 44
+    slider_gap = 24
+
+    # Vertical stack (top to bottom) with fixed gaps so waveform, stems, slider never overlap
+    deck_radius = 140
+    deck_cy = 20 + deck_radius
+    deck_bottom = deck_cy + deck_radius
+
+    wf_height = 60
+    wf_y = deck_bottom + section_gap
+    wf_bottom = wf_y + wf_height
+
+    stem_block_h = 2 * (stem_size + gap)
+    ly = wf_bottom + section_gap
+    ry = ly
+
+    slider_y = ly + stem_block_h + slider_gap
+
+    # Decks (top corners)
+    left_deck = Deck(deck_radius + 20, deck_cy, deck_radius, selector=song_selector, side="left", label="L")
+    right_deck = Deck(width - deck_radius - 20, deck_cy, deck_radius, selector=song_selector, side="right", label="R")
+    decks = [left_deck, right_deck]
+
+    left_wf = Waveform(left_deck.cx - deck_radius, wf_y, 2 * deck_radius, wf_height, selector=song_selector, side="left")
+    right_wf = Waveform(right_deck.cx - deck_radius, wf_y, 2 * deck_radius, wf_height, selector=song_selector, side="right")
+    waveforms = [left_wf, right_wf]
+
+    lx = width // 4 - 30 - (2 * stem_size + gap) - gap
+    rx = 3 * width // 4 + 30 + gap
+    slider_w = 2 * stem_size + gap
+
+    py = ly + (stem_block_h - 100) // 2
     left_button = PlayButton(width // 4 - 30, py, 100, 100, selector=song_selector, side="left")
     right_button = PlayButton(3 * width // 4 - 70, py, 100, 100, selector=song_selector, side="right")
     cue_radius = 44
     cue_y = py + 100 + 80
-    left_cue = CueButton(width // 4 + 20, cue_y, cue_radius, selector=song_selector, side="left")
-    right_cue = CueButton(3 * width // 4 - 20, cue_y, cue_radius, selector=song_selector, side="right")
+    cue_spacing = 2 * cue_radius + 12  # center-to-center so circles don't overlap (radius 44 → need 88+ gap)
+    slider_cue_gap = 50  # gap between slider edge and circles
+    # Position circles just past slider (toward center) so gap is kept, sliders stay at lx/rx
+    left_start_cx = lx + slider_w + slider_cue_gap + cue_radius
+    left_cue_cx = left_start_cx + cue_spacing
+    right_cue_cx = rx - slider_cue_gap - cue_radius
+    right_start_cx = right_cue_cx - cue_spacing
+    left_start = StartButton(left_start_cx, cue_y, cue_radius, song_selector, "left")
+    left_cue = MemoryCueButton(left_cue_cx, cue_y, cue_radius, song_selector, "left")
+    right_start = StartButton(right_start_cx, cue_y, cue_radius, song_selector, "right")
+    right_cue = MemoryCueButton(right_cue_cx, cue_y, cue_radius, song_selector, "right")
+    buttons = [left_button, right_button, left_start, left_cue, right_start, right_cue]
 
-    buttons = [left_button, right_button, left_cue, right_cue]
-
-    stem_labels = ["bass", "drm", "oth", "vox"]
-    stem_size = 70
-    gap = 40
-
-    # Left stems (to the left of left play button)
-    lx = width // 4 - 30 - (2 * stem_size + gap) - gap
-    ly = 2 * height // 3
     for i, label in enumerate(stem_labels):
         row, col = divmod(i, 2)
         buttons.append(StemButton(
@@ -51,9 +92,6 @@ def main():
             stem_size, stem_size,
             selector=song_selector, side="left", stem_index=i, label=label))
 
-    # Right stems (to the right of right play button)
-    rx = 3 * width // 4 + 30 + gap
-    ry = 2 * height // 3
     for i, label in enumerate(stem_labels):
         row, col = divmod(i, 2)
         buttons.append(StemButton(
@@ -61,26 +99,22 @@ def main():
             stem_size, stem_size,
             selector=song_selector, side="right", stem_index=i, label=label))
 
-    # Decks (top corners)
-    deck_radius = height // 4
-    left_deck = Deck(deck_radius + 20, deck_radius + 20, deck_radius, selector=song_selector, side="left", label="L")
-    right_deck = Deck(width - deck_radius - 20, deck_radius + 20, deck_radius, selector=song_selector, side="right", label="R")
-    decks = [left_deck, right_deck]
+    left_slider = BPMSlider(lx, slider_y, slider_w, slider_h, song_selector, "left")
+    right_slider = BPMSlider(rx, slider_y, slider_w, slider_h, song_selector, "right")
+    # Volume slider: vertical, same area as BPM slider; well above circles so no overlap
+    vol_slider_w, vol_slider_h = slider_h, slider_w
+    vol_gap = 10
+    vol_x_inset = 35
+    vol_y_inset = 110  # well above circles so dragging to bottom of slider doesn’t hit CUE/START
+    left_vol_x = width // 4 - 30 + 100 + vol_gap + vol_x_inset
+    right_vol_x = 3 * width // 4 - 70 - vol_slider_w - vol_gap - vol_x_inset
+    vol_y = py - vol_y_inset
+    left_vol = VolumeSlider(left_vol_x, vol_y, vol_slider_w, vol_slider_h, song_selector, "left")
+    right_vol = VolumeSlider(right_vol_x, vol_y, vol_slider_w, vol_slider_h, song_selector, "right")
+    sliders = [left_slider, right_slider, left_vol, right_vol]
 
-    wf_height = 60
-    wf_y = 2 * deck_radius + 40
-    left_wf = Waveform(left_deck.cx - deck_radius, wf_y, 2 * deck_radius, wf_height, selector=song_selector, side="left")
-    right_wf = Waveform(right_deck.cx - deck_radius, wf_y, 2 * deck_radius, wf_height, selector=song_selector, side="right")
-    waveforms = [left_wf, right_wf]
-
-    # BPM sliders under each deck's 4 stem buttons, same width as the 2x2 block
-    slider_w = 2 * stem_size + gap
-    slider_h = 44
-    slider_y_left = ly + 2 * (stem_size + gap) + gap
-    slider_y_right = ry + 2 * (stem_size + gap) + gap
-    left_slider = BPMSlider(lx, slider_y_left, slider_w, slider_h, song_selector, "left")
-    right_slider = BPMSlider(rx, slider_y_right, slider_w, slider_h, song_selector, "right")
-    sliders = [left_slider, right_slider]
+    cv2.namedWindow("CV DJ Set", cv2.WINDOW_NORMAL)
+    cv2.resizeWindow("CV DJ Set", DISPLAY_W, DISPLAY_H)
 
     print("DJ Hand Tracking Started. Press 'q' to exit.")
 
@@ -91,6 +125,7 @@ def main():
                 print("Ignoring empty camera frame.")
                 continue
 
+            frame = cv2.resize(frame, (DISPLAY_W, DISPLAY_H))
             rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             tracker.detect_async(rgb_frame)
 
