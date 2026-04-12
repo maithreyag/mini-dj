@@ -30,8 +30,10 @@ class SongSelector:
         self.bpm = {"left": None, "right": None}
         self.playing = {"left": False, "right": False}
         self.volumes = {"left": [1.0] * 4, "right": [1.0] * 4}
+        self.deck_volume = {"left": 1.0, "right": 1.0}
         self.rate = {"left": 1.0, "right": 1.0}
         self.position = {"left": 0.0, "right": 0.0}
+        self.cue_point = {"left": None, "right": None}  # memory cue: first press sets, later presses go back
         self.waveforms = {"left": [], "right": []}
 
         self.stream = sd.OutputStream(
@@ -100,8 +102,28 @@ class SongSelector:
     def set_rate(self, side, rate):
         self.rate[side] = max(0.0, float(rate))
 
+    def reset_tempo(self, side):
+        """Reset deck to 1x (average BPM)."""
+        self.set_rate(side, 1.0)
+
+    def set_deck_volume(self, side, vol):
+        self.deck_volume[side] = max(0.0, min(1.0, float(vol)))
+
     def cue(self, side):
+        """Back to start: jump to 0 and stop."""
         self.position[side] = 0.0
+
+    def trigger_memory_cue(self, side):
+        """First press: set breakpoint at current position. Later presses: jump back there and keep playing."""
+        if self.cue_point[side] is None:
+            self.cue_point[side] = float(self.position[side])
+        else:
+            self.position[side] = self.cue_point[side]
+            self.playing[side] = True
+
+    def reset_cue_point(self, side):
+        """Clear the stored breakpoint for this deck."""
+        self.cue_point[side] = None
 
     def mute(self, side, stem_index):
         self.volumes[side][stem_index] = 0.0
@@ -121,6 +143,7 @@ class SongSelector:
 
         self.stems[side] = loaded
         self.position[side] = 0.0
+        self.cue_point[side] = None
         self._build_waveform(side)
 
     def _build_waveform(self, side):

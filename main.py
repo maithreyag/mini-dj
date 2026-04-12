@@ -7,7 +7,12 @@ import os
 import curses
 from hand_tracker import HandTracker, draw_hand_skeleton
 from song_selector import SongSelector
-from ui import PlayButton, StemButton, CueButton, Deck, Waveform, BPMSlider
+from ui import PlayButton, StemButton, StartButton, MemoryCueButton, ResetCueButton, TempoResetButton, Deck, Waveform, BPMSlider, VolumeSlider
+
+# Fixed display size: UI and hit-testing are always in this resolution,
+# so layout looks the same on every device regardless of camera or window size.
+DISPLAY_W = 1280
+DISPLAY_H = 720
 
 
 def pick_song(stdscr, songs, deck_name, default):
@@ -170,6 +175,7 @@ def main():
                 print("Ignoring empty camera frame.")
                 continue
 
+            frame = cv2.resize(frame, (DISPLAY_W, DISPLAY_H))
             rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             tracker.detect_async(rgb_frame)
 
