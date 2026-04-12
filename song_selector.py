@@ -65,15 +65,31 @@ class SongSelector:
             if pos >= max_len:
                 self.playing[side] = False
                 continue
-            for out_i in range(frames):
-                read_pos = pos + out_i * rate
-                if read_pos >= max_len:
-                    break
-                for i, stem_data in enumerate(self.stems[side]):
-                    if read_pos >= len(stem_data):
-                        continue
-                    outdata[out_i] += self._sample_stem_at(stem_data, read_pos) * self.volumes[side][i]
+            # Vectorized: compute all read positions at once
+            read_positions = pos + np.arange(frames, dtype=np.float64) * rate
+            valid = read_positions < max_len
+            if not np.any(valid):
+                self.playing[side] = False
+                continue
+            rp = read_positions[valid]
+            i0 = np.floor(rp).astype(np.int64)
+            t = (rp - i0).astype(np.float32)
+            n_valid = len(rp)
+            for i, stem_data in enumerate(self.stems[side]):
+                vol = self.volumes[side][i]
+                if vol == 0.0:
+                    continue
+                slen = len(stem_data)
+                mask = i0 < slen - 1
+                idx = np.minimum(i0[mask], slen - 2)
+                frac = t[mask]
+                samples = stem_data[idx] * (1 - frac[:, None]) + stem_data[idx + 1] * frac[:, None]
+                # Write into the valid portion of outdata
+                out_slice = outdata[:n_valid]
+                out_slice[mask] += samples * vol
             self.position[side] = pos + frames * rate
+        outdata *= 0.5
+        np.clip(outdata, -1.0, 1.0, out=outdata)
 
     def play(self, side):
         self.playing[side] = True
@@ -86,7 +102,6 @@ class SongSelector:
 
     def cue(self, side):
         self.position[side] = 0.0
-        self.playing[side] = False
 
     def mute(self, side, stem_index):
         self.volumes[side][stem_index] = 0.0

@@ -2,3 +2,4 @@
 hand_landmarker.task
 __pycache__/
 songs/
+.DS_Store/
