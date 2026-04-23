@@ -58,7 +58,7 @@ def overlay_image(background, img_overlay, x, y):
     return background
 
 class Button:
-    def __init__(self, x, y, width, height, color=(40, 40, 40), active_color=(0, 255, 0), icon_path=None):
+    def __init__(self, x, y, width, height, color=(40, 40, 40), active_color=(235, 99, 37), icon_path=None):
         self.x = x
         self.y = y
         self.width = width
@@ -172,7 +172,7 @@ class PlayButton(Button):
 
 class _CircleButton(Button):
     """Base for circular buttons (start, memory cue)."""
-    def __init__(self, cx, cy, radius, selector, side, label="", color=(40, 40, 40), active_color=(0, 255, 0), **kwargs):
+    def __init__(self, cx, cy, radius, selector, side, label="", color=(40, 40, 40), active_color=(235, 99, 37), **kwargs):
         self.cx = cx
         self.cy = cy
         self.radius = radius

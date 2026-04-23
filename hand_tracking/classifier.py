@@ -35,15 +35,20 @@ class GestureClassifier:
     def __init__(self, model_path=MODEL_FILE, encoder_path=ENCODER_FILE,
                  confidence=CONFIDENCE_THRESHOLD):
         self.confidence = confidence
+        self.usable = False
 
-        self.encoder = joblib.load(encoder_path)
-        n_classes = len(self.encoder.classes_)
+        try:
+            self.encoder = joblib.load(encoder_path)
+            n_classes = len(self.encoder.classes_)
 
-        self.model = _build_model(n_classes)
-        self.model.load_state_dict(torch.load(model_path, weights_only=True))
-        self.model.eval()
-
-        print(f"Gesture classes: {list(self.encoder.classes_)}")
+            self.model = _build_model(n_classes)
+            self.model.load_state_dict(torch.load(model_path, weights_only=True))
+            self.model.eval()
+            self.usable = True
+            print(f"Gesture classes: {list(self.encoder.classes_)}")
+        except Exception as e:
+            print(f"Warning: Could not load gesture model ({e}).")
+            print("Running in UI-only mode. Train a model with tools/train.py to use gestures!")
 
     def classify(self, landmarks, width, height):
         """
@@ -52,6 +57,9 @@ class GestureClassifier:
         Returns the gesture string (e.g. "fist-r", "peace-l") or None
         if confidence is below threshold or prediction is "none".
         """
+        if not self.usable:
+            return None
+
         features = normalize_landmarks(landmarks, width, height)
         x = torch.tensor(features).unsqueeze(0)
         with torch.no_grad():
