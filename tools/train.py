@@ -8,9 +8,9 @@ from sklearn.preprocessing import LabelEncoder
 from sklearn.metrics import accuracy_score, confusion_matrix
 import joblib
 
-DATA_FILE = "gesture_data.csv"
-MODEL_FILE = "gesture_model.pt"
-ENCODER_FILE = "gesture_encoder.joblib"
+DATA_FILE = "data/gesture_data.csv"
+MODEL_FILE = "models/gesture_model.pt"
+ENCODER_FILE = "models/gesture_encoder.joblib"
 
 EPOCHS = 100
 BATCH_SIZE = 32
@@ -62,7 +62,14 @@ model = nn.Sequential(
     nn.Linear(64, n_classes),
 )
 
-loss_fn   = nn.CrossEntropyLoss()
+counts = np.bincount(y)
+weights = 1.0 / counts.astype(np.float32)
+weights /= weights.sum()
+print(f"\nClass weights (inverse frequency):")
+for i, cls in enumerate(encoder.classes_):
+    print(f"  {cls}: {weights[i]:.4f}  ({counts[i]} samples)")
+
+loss_fn   = nn.CrossEntropyLoss(weight=torch.tensor(weights))
 optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
 
 # ── Training loop ─────────────────────────────────────────────────────────────

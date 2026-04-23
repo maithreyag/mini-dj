@@ -1,13 +1,10 @@
 import cv2
-import numpy as np
-import torch
-import torch.nn as nn
-import joblib
 import os
 import curses
-from hand_tracker import HandTracker, draw_hand_skeleton
-from song_selector import SongSelector
-from ui import PlayButton, StemButton, StartButton, MemoryCueButton, ResetCueButton, TempoResetButton, Deck, Waveform, BPMSlider, VolumeSlider
+from hand_tracking.tracker import HandTracker, draw_hand_skeleton
+from hand_tracking.classifier import GestureClassifier
+from playback.selector import SongSelector
+from playback.ui import PlayButton, StemButton, StartButton, MemoryCueButton, ResetCueButton, TempoResetButton, Deck, Waveform, BPMSlider, VolumeSlider
 
 # Fixed display size: UI and hit-testing are always in this resolution,
 # so layout looks the same on every device regardless of camera or window size.
@@ -50,18 +47,6 @@ def select_songs():
 
     return curses.wrapper(run)
 
-GESTURE_CONFIDENCE = 0.8
-
-def _normalize_landmarks(landmarks, width, height):
-    points = np.array([[lm.x * width, lm.y * height, lm.z * width]
-                       for lm in landmarks], dtype=np.float32)
-    points -= points[0]
-    points[:, 0] *= -1  # mirror x to match training data (collected on flipped frame)
-    scale = np.linalg.norm(points[9])
-    if scale > 0:
-        points /= scale
-    return points[1:].flatten()  # drop wrist zeros, 60 features
-
 def main():
     tracker = HandTracker()
     cap = cv2.VideoCapture(0)
@@ -90,17 +75,7 @@ def main():
     song_selector.select("right", def_right)
     song_selector.apply_bpm_sync()
 
-    # Gesture model
-    encoder = joblib.load("gesture_encoder.joblib")
-    n_classes = len(encoder.classes_)
-    gesture_model = nn.Sequential(
-        nn.Linear(60, 64), nn.ReLU(),
-        nn.Linear(64, 64), nn.ReLU(),
-        nn.Linear(64, n_classes),
-    )
-    gesture_model.load_state_dict(torch.load("gesture_model.pt", weights_only=True))
-    gesture_model.eval()
-    print(f"Gesture classes: {list(encoder.classes_)}")
+    gesture_classifier = GestureClassifier()
 
     # Play buttons (display coords: left on left, right on right)
     py = 2 * height // 3
@@ -108,10 +83,8 @@ def main():
     right_button = PlayButton(3 * width // 4 - 70,  py, 100, 100, selector=song_selector, side="right")
     cue_radius = 44
     cue_y = py + 100 + 80
-    left_cue  = CueButton(width // 4 + 20,      cue_y, cue_radius, selector=song_selector, side="left")
-    right_cue = CueButton(3 * width // 4 - 20,  cue_y, cue_radius, selector=song_selector, side="right")
-
-    buttons = [left_button, right_button, left_cue, right_cue]
+    left_cue  = MemoryCueButton(width // 4 + 20,      cue_y, cue_radius, selector=song_selector, side="left")
+    right_cue = MemoryCueButton(3 * width // 4 - 20,  cue_y, cue_radius, selector=song_selector, side="right")
 
     stem_labels = ["bass", "drm", "oth", "vox"]
     stem_size = 52
@@ -121,6 +94,7 @@ def main():
     lx = width // 4 - 30 - (2 * stem_size + gap) - gap
     ly = 2 * height // 3
     left_stems = []
+    all_buttons = [left_button, right_button, left_cue, right_cue]
     for i, label in enumerate(stem_labels):
         row, col = divmod(i, 2)
         btn = StemButton(
@@ -128,7 +102,7 @@ def main():
             stem_size, stem_size,
             selector=song_selector, side="left", stem_index=i, label=label)
         left_stems.append(btn)
-        buttons.append(btn)
+        all_buttons.append(btn)
 
     # Right stems (to the right of right play button)
     rx = 3 * width // 4 + 30 + gap
@@ -141,7 +115,7 @@ def main():
             stem_size, stem_size,
             selector=song_selector, side="right", stem_index=i, label=label)
         right_stems.append(btn)
-        buttons.append(btn)
+        all_buttons.append(btn)
 
     # Decks (top corners)
     deck_radius = height // 4
@@ -165,7 +139,9 @@ def main():
     right_slider = BPMSlider(rx, slider_y_right, slider_w, slider_h, song_selector, "right")
     sliders = [left_slider, right_slider]
 
-    prev_gesture = None
+    BPM_SLOW_STEP = 0.005  # rate change per frame while peace/thumb is held
+
+    prev_gestures = {"Left": None, "Right": None}
     print("DJ Hand Tracking Started. Press 'q' to exit.")
 
     try:
@@ -183,45 +159,30 @@ def main():
 
             frame = draw_hand_skeleton(frame, tracker, result)
 
-            # Gesture inference — right hand only (model was trained on right hand)
-            gesture = None
-            if result and result.hand_landmarks:
-                right_idx = next(
-                    (i for i, h in enumerate(result.handedness)
-                     if h[0].category_name == "Right"),
-                    None
-                )
-                if right_idx is not None:
-                    lms = result.hand_landmarks[right_idx]
-                    features = _normalize_landmarks(lms, width, height)
-                    x = torch.tensor(features).unsqueeze(0)
-                    with torch.no_grad():
-                        probs = torch.softmax(gesture_model(x), dim=1).squeeze()
-                    confidence, idx = probs.max(dim=0)
-                    if confidence.item() >= GESTURE_CONFIDENCE:
-                        gesture = str(encoder.classes_[idx.item()])
-                        if gesture == "none":
-                            gesture = None
+            # Gesture inference — both hands
+            gestures = gesture_classifier.classify_all(result, width, height)
 
-            # Fire action only on gesture change
-            if gesture and gesture != prev_gesture:
-                if gesture == "fist":
-                    song_selector.pause("left")
-                    song_selector.pause("right")
-                    left_button.on = False
-                    right_button.on = False
-                elif gesture == "thumb":
-                    song_selector.play("left")
-                    song_selector.play("right")
-                    left_button.on = True
-                    right_button.on = True
-                elif gesture == "peace":
-                    for side in ["left", "right"]:
-                        song_selector.mute(side, 0)  # bass
-                        song_selector.mute(side, 1)  # drums
-                    for btn in [left_stems[0], left_stems[1], right_stems[0], right_stems[1]]:
+            # Process gestures for each hand
+            for hand in ["Left", "Right"]:
+                gesture = gestures[hand]
+                action, side = gesture_classifier.parse_gesture(gesture)
+
+                # Fire one-shot actions on gesture change
+                if gesture and gesture != prev_gestures[hand] and action:
+                    btn = left_button if side == "left" else right_button
+                    if action == "fist":
+                        song_selector.pause(side)
                         btn.on = False
-            prev_gesture = gesture
+
+                # Continuous actions — fire every frame while gesture is held
+                if action == "peace":
+                    current_rate = song_selector.rate[side]
+                    song_selector.set_rate(side, current_rate - BPM_SLOW_STEP)
+                if action == "thumb":
+                    current_rate = song_selector.rate[side]
+                    song_selector.set_rate(side, current_rate + BPM_SLOW_STEP)
+
+                prev_gestures[hand] = gesture
 
             for hand in ["Left", "Right"]:
                 pinch_pos = tracker.pinch_pos[hand]
@@ -229,7 +190,7 @@ def main():
                 if pinch_pos:
                     pinch_pos = (width - 1 - pinch_pos[0], pinch_pos[1])
 
-                for button in buttons:
+                for button in all_buttons:
                     if tracker.state[hand] == 1:
                         button.update(hand, pinch_pos)
                     else:
@@ -246,7 +207,7 @@ def main():
 
             reversed_frame = cv2.flip(frame, 1)
 
-            for button in buttons:
+            for button in all_buttons:
                 button.draw(reversed_frame)
                 if hasattr(button, 'draw_label'):
                     button.draw_label(reversed_frame)

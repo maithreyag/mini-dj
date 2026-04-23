@@ -5,8 +5,8 @@ import torch
 import torch.nn as nn
 import joblib
 
-MODEL_FILE   = "gesture_model.pt"
-ENCODER_FILE = "gesture_encoder.joblib"
+MODEL_FILE   = "models/gesture_model.pt"
+ENCODER_FILE = "models/gesture_encoder.joblib"
 CONFIDENCE_THRESHOLD = 0.7  # below this -> show "none"
 
 def normalize_landmarks(landmarks, width, height):
@@ -38,7 +38,7 @@ cap = cv2.VideoCapture(0)
 cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
 
-base_options = mp.tasks.BaseOptions(model_asset_path='./hand_landmarker.task')
+base_options = mp.tasks.BaseOptions(model_asset_path='models/hand_landmarker.task')
 options = mp.tasks.vision.HandLandmarkerOptions(
     base_options=base_options,
     running_mode=mp.tasks.vision.RunningMode.IMAGE,

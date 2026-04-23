@@ -9,7 +9,7 @@ UNMERGE_DIST = 80
 
 
 class HandTracker:
-    def __init__(self, model_path='./hand_landmarker.task'):
+    def __init__(self, model_path='models/hand_landmarker.task'):
         self.latest_result = None
 
         base_options = mp.tasks.BaseOptions(model_asset_path=model_path)

@@ -1,9 +1,10 @@
 .venv/
-hand_landmarker.task
 __pycache__/
-songs/
 .DS_Store
 
-*.joblib
-*.pt
-gesture_data.csv
+# Audio
+songs/
+
+# Model artifacts
+models/
+data/
